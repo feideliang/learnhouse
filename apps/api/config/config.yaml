@@ -1,0 +1,88 @@
+site_name: LearnHouse
+site_description: LearnHouse is an open-source platform tailored for learning experiences.
+contact_email: hi@learnhouse.app
+
+# This config is optimized for local development. You can change the values according to your needs.
+
+general:
+  development_mode: true
+
+security:
+  # SECURITY: Set via LEARNHOUSE_AUTH_JWT_SECRET_KEY env var (required, min 32 chars).
+  # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+  auth_jwt_secret_key: ""
+
+hosting_config:
+  domain: localhost:3000
+  frontend_domain: localhost:3000
+  ssl: false
+  port: 1338
+  allowed_origins:
+    - http://localhost:3000
+    - http://localhost:3001
+  cookies_config:
+    domain: ".localhost"
+  allowed_regexp: '\b((?:https?://)[^\s/$.?#].[^\s]*)\b'
+  content_delivery:
+    type: "s3api" # "filesystem" or "s3api"
+    s3api:
+      bucket_name: "learnhouse-media"
+      endpoint_url: "http://minio:9000"
+      access_key: "minioadmin"
+      secret_key: "minioadmin123"
+
+mailing_config:
+  email_provider: "resend" # "resend" or "smtp"
+  system_email_address: ""
+  resend_api_key: ""
+  smtp_host: ""
+  smtp_port: 587
+  smtp_username: ""
+  smtp_password: ""
+  smtp_use_tls: true
+
+database_config:
+  sql_connection_string: postgresql://learnhouse:learnhouse@localhost:5432/learnhouse
+
+redis_config:
+  redis_connection_string: redis://localhost:6379/learnhouse
+
+payments_config:
+  # See ee/services/payments/README.md for full setup instructions.
+  # To add a new payment provider, add its credentials block here and register
+  # it in ee/db/payments/payments.py (PaymentProviderEnum) and config/config.py.
+  stripe:
+    # Platform API keys — Stripe Dashboard → Developers → API keys
+    stripe_secret_key: ""        # sk_live_... (or sk_test_... for development)
+    stripe_publishable_key: ""   # pk_live_... (or pk_test_... for development)
+    # Stripe Connect OAuth client ID — Stripe Dashboard → Settings → Connect → OAuth
+    stripe_client_id: ""         # ca_...
+    # Webhook signing secrets — Stripe Dashboard → Developers → Webhooks
+    # Standard endpoint:  POST /payments/stripe/webhook/standard
+    stripe_webhook_standard_secret: ""   # whsec_...
+    # Connect endpoint:   POST /payments/stripe/webhook/connect
+    stripe_webhook_connect_secret: ""    # whsec_...
+
+ai_config:
+  gemini_api_key: ""
+  ai_api_base_url: ""
+  ai_api_key: ""
+  ai_model_name: ""
+  ai_embedding_model: ""
+  is_ai_enabled: false
+
+tinybird_config:
+  # Analytics (ClickHouse or Tinybird)
+  # For self-hosted ClickHouse:
+  #   api_url: http://localhost:8123
+  #   username: default
+  #   password: your_password
+  # For Tinybird (managed ClickHouse):
+  #   api_url: https://api.europe-west2.gcp.tinybird.co
+  #   ingest_token: p.eyJ...
+  #   read_token: p.eyJ...
+  api_url: ""
+  username: "default"
+  password: ""
+  ingest_token: ""
+  read_token: ""

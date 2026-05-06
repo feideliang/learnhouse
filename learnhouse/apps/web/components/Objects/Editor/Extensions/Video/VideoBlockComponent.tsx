@@ -204,8 +204,10 @@ function VideoBlockComponent(props: ExtendedNodeViewProps) {
         (info) => setUploadProgress(info.percentage)
       )
 
-      const newBlockObject = {
+      const newBlockObject: VideoBlockObject = {
         ...object,
+        block_uuid: object.block_uuid,
+        content: object.content,
         size: selectedSize
       }
       setBlockObject(newBlockObject)

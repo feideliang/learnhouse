@@ -16,7 +16,7 @@ FULL_FILE_BYTES=639418378     # 610 MB — this value MUST NOT appear as Content
 set -u
 
 BACKEND="http://localhost:9001"
-FRONTEND="http://localhost:3000"
+FRONTEND="http://localhost:8088"
 EMAIL="admin@school.dev"
 PASSWORD="learnhouse123"
 

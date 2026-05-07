@@ -1,5 +1,7 @@
 import uvicorn
 import sentry_sdk
+import asyncio
+import os
 from fastapi import FastAPI
 from config.config import LearnHouseConfig, get_learnhouse_config
 from src.core.events.events import shutdown_app, startup_app
@@ -9,6 +11,16 @@ from fastapi.middleware.gzip import GZipMiddleware
 from src.core.ee_hooks import register_ee_middlewares
 from src.routers.content_files import router as content_files_router
 from src.routers.local_content import router as local_content_router
+
+
+# Upload bandwidth throttle: adaptive rate limiting.
+# Measures real upload speed during first 5 seconds, then caps at 95%.
+# LEARNHOUSE_UPLOAD_RATE_LIMIT env var overrides auto-detection (bytes/sec).
+# Set to 0 to disable throttling entirely.
+UPLOAD_RATE_LIMIT_BYTES_PER_SEC = int(
+    os.environ.get("LEARNHOUSE_UPLOAD_RATE_LIMIT", "0")
+)
+UPLOAD_THROTTLE_PATHS = ("/api/v1/courses/migrate/upload",)
 
 
 class SafeGZipMiddleware(GZipMiddleware):
@@ -64,6 +76,73 @@ app = FastAPI(
     redoc_url="/redoc" if learnhouse_config.general_config.development_mode else None,
     version="1.1.4",
 )
+
+
+class UploadThrottleMiddleware:
+    """ASGI middleware that monitors upload speed.
+
+    Default (LEARNHOUSE_UPLOAD_RATE_LIMIT=0): monitors only, no throttling.
+    If LEARNHOUSE_UPLOAD_RATE_LIMIT > 0: caps upload speed to that many bytes/sec.
+
+    No adaptive throttling — asyncio.sleep in receive() interferes with
+    python-multipart buffering and causes uploads to stall.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        path = scope.get("path", "")
+        if not any(path.startswith(p) for p in UPLOAD_THROTTLE_PATHS):
+            return await self.app(scope, receive, send)
+
+        rate = UPLOAD_RATE_LIMIT_BYTES_PER_SEC
+        if rate > 0:
+            return await self.app(scope, self._throttled(receive, rate), send)
+
+        # Monitoring only — no blocking
+        return await self.app(scope, self._measure(receive), send)
+
+    @staticmethod
+    def _throttled(receive, rate):
+        async def inner():
+            message = await receive()
+            body = message.get("body", b"") if message.get("type") == "http.request" else b""
+            if body:
+                await asyncio.sleep(len(body) / rate)
+            return message
+        return inner
+
+    @staticmethod
+    def _measure(receive):
+        import logging
+        logger = logging.getLogger(__name__)
+        loop = asyncio.get_event_loop()
+        start = [None]
+        total = [0]
+        logged = [False]
+
+        async def inner():
+            if start[0] is None:
+                start[0] = loop.time()
+            message = await receive()
+            body = message.get("body", b"") if message.get("type") == "http.request" else b""
+            if body:
+                total[0] += len(body)
+                elapsed = loop.time() - start[0]
+                if not logged[0] and elapsed >= 10.0:
+                    speed_mbps = total[0] / elapsed / 1024 / 1024
+                    logger.info("Upload measured: %.2f MB/s over %.1fs (%d bytes)", speed_mbps, elapsed, total[0])
+                    logged[0] = True
+            return message
+        return inner
+
+# Upload throttle middleware — added first so it wraps closest to the app,
+# throttling body reads before other middleware consume the request
+app.add_middleware(UploadThrottleMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

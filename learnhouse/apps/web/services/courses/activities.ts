@@ -1,9 +1,9 @@
 import { getAPIUrl } from '@services/config/config'
 import {
-  RequestBodyFormWithAuthHeader,
   RequestBodyWithAuthHeader,
   getResponseMetadata,
 } from '@services/utils/ts/requests'
+import { uploadFileWithXHR, BatchProgressInfo } from '@/lib/upload-progress'
 
 export async function createActivity(
   data: any,
@@ -28,50 +28,41 @@ export async function createFileActivity(
   type: string,
   data: any,
   chapter_id: any,
-  access_token: string
+  access_token: string,
+  onProgress?: (info: BatchProgressInfo) => void,
 ) {
-  // Send file thumbnail as form data
-  const formData = new FormData()
-  formData.append('chapter_id', chapter_id)
-
   let endpoint = ''
+  let fieldName = ''
+  const extraFields: Record<string, string> = { chapter_id: String(chapter_id) }
 
   if (type === 'video') {
-    formData.append('name', data.name)
-    formData.append('video_file', file)
-    // Add video details
+    extraFields['name'] = data.name
+    fieldName = 'video_file'
     if (data.details) {
-      formData.append('details', JSON.stringify({
+      extraFields['details'] = JSON.stringify({
         startTime: data.details.startTime || 0,
         endTime: data.details.endTime || null,
         autoplay: data.details.autoplay || false,
-        muted: data.details.muted || false
-      }))
+        muted: data.details.muted || false,
+      })
     }
     endpoint = `${getAPIUrl()}activities/video`
   } else if (type === 'documentpdf') {
-    formData.append('pdf_file', file)
-    formData.append('name', data.name)
+    extraFields['name'] = data.name
+    fieldName = 'pdf_file'
     endpoint = `${getAPIUrl()}activities/documentpdf`
   } else {
-    // Handle other file types here
+    throw new Error(`Unsupported file activity type: ${type}`)
   }
 
-  const result: any = await fetch(
+  return uploadFileWithXHR(
     endpoint,
-    RequestBodyFormWithAuthHeader('POST', formData, null, access_token)
+    access_token,
+    file,
+    fieldName,
+    extraFields,
+    onProgress,
   )
-  if (!result.ok) {
-    const errorData = await result.json().catch(() => ({}))
-    const message = typeof errorData?.detail === 'string'
-      ? errorData.detail
-      : Array.isArray(errorData?.detail)
-        ? errorData.detail.map((e: any) => e.msg).join(', ')
-        : `Upload failed: ${result.status} ${result.statusText}`
-    throw new Error(message)
-  }
-  const res = await result.json()
-  return res
 }
 
 export async function createExternalVideoActivity(

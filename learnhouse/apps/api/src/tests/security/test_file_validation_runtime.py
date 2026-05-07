@@ -183,7 +183,7 @@ class TestValidateUpload:
         returned_type, returned_content = validate_upload(upload, allowed_types)
 
         assert returned_type == content_type
-        assert returned_content == content
+        assert returned_content is None
         assert upload.file.tell() == 0
 
 

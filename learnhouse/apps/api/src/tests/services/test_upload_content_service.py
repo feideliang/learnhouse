@@ -103,7 +103,8 @@ class TestUploadContentService:
                 content_delivery=SimpleNamespace(
                     type="s3api",
                     s3api=SimpleNamespace(
-                        endpoint_url="https://s3.test", bucket_name="bucket"
+                        endpoint_url="https://s3.test", bucket_name="bucket",
+                        access_key=None, secret_key=None,
                     ),
                 )
             )
@@ -128,15 +129,15 @@ class TestUploadContentService:
                     file_binary=b"ok",
                     file_and_format="logo.png",
                 )
-            s3_client.upload_file.assert_called_once()
+            s3_client.upload_fileobj.assert_called_once()
             s3_client.head_object.assert_called_once()
 
             s3_client = Mock()
             from botocore.exceptions import ClientError
 
-            s3_client.upload_file.side_effect = ClientError(
+            s3_client.upload_fileobj.side_effect = ClientError(
                 {"Error": {"Code": "500", "Message": "boom"}},
-                "upload_file",
+                "upload_fileobj",
             )
             with patch(
                 "src.services.utils.upload_content.get_learnhouse_config",
@@ -167,6 +168,8 @@ class TestUploadContentService:
                     s3api=SimpleNamespace(
                         endpoint_url="http://s3.test",
                         bucket_name="bucket",
+                        access_key=None,
+                        secret_key=None,
                     ),
                 )
             )
@@ -194,6 +197,6 @@ class TestUploadContentService:
                     file_binary=b"ok",
                     file_and_format="logo.png",
                 )
-            s3_client.upload_file.assert_called_once()
+            s3_client.upload_fileobj.assert_called_once()
         finally:
             os.chdir(old_cwd)

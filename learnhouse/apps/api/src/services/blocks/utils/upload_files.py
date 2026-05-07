@@ -41,10 +41,15 @@ async def upload_file_and_return_file_object(
         filename_prefix=f"block_{file_id}"
     )
 
-    # Get file metadata
-    file.file.seek(0)
-    content = await file.read()
-    
+    # Derive file size without loading the whole body into RAM.
+    file_size = getattr(file, "size", None)
+    if not isinstance(file_size, int) or file_size < 0:
+        try:
+            file.file.seek(0, 2)
+            file_size = file.file.tell()
+        finally:
+            file.file.seek(0)
+
     # Extract actual name on disk and extension
     parts = filename.rsplit(".", 1)
     name_on_disk = parts[0]
@@ -54,7 +59,7 @@ async def upload_file_and_return_file_object(
         file_id=name_on_disk,
         file_format=ext,
         file_name=file.filename,
-        file_size=len(content),
+        file_size=file_size,
         file_type=file.content_type,
         activity_uuid=activity_uuid,
     )

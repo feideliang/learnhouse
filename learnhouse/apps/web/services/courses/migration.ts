@@ -69,7 +69,7 @@ export async function uploadMigrationFiles(
     const file = files[i]
     const batchByteOffset = files.slice(0, i).reduce((s, f) => s + f.size, 0)
 
-    const tempIdParam = tempId ? `&temp_id=${tempId}` : ''
+    const tempIdParam = tempId ? `?temp_id=${tempId}` : ''
     const url = `${getAPIUrl()}courses/migrate/upload${tempIdParam}`
 
     const result: MigrationUploadResponse = await uploadBatchWithProgress(

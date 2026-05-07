@@ -105,36 +105,36 @@ def validate_zip_content(content: bytes) -> bool:
     return True
 
 
-# File type configurations (no size limits)
+# File type configurations with hard size limits to protect backend memory/disk.
 FILE_TYPES = {
     'image': {
         'extensions': ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
         'mime_types': ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-        'max_size': None,  # No limit
+        'max_size': 50 * 1024 * 1024,  # 50MB
         'validator': validate_image_content
     },
     'video': {
         'extensions': ['.mp4', '.webm'],
         'mime_types': ['video/mp4', 'video/webm'],
-        'max_size': None,  # No limit
+        'max_size': 2 * 1024 * 1024 * 1024,  # 2GB
         'validator': validate_video_content
     },
     'document': {
         'extensions': ['.pdf'],
         'mime_types': ['application/pdf'],
-        'max_size': None,  # No limit
+        'max_size': 500 * 1024 * 1024,  # 500MB
         'validator': lambda content: content.startswith(b'%PDF-')
     },
     'audio': {
         'extensions': ['.mp3', '.wav', '.ogg', '.m4a'],
         'mime_types': ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'],
-        'max_size': None,  # No limit
+        'max_size': 500 * 1024 * 1024,  # 500MB
         'validator': validate_audio_content
     },
     'scorm': {
         'extensions': ['.zip'],
         'mime_types': ['application/zip', 'application/x-zip-compressed'],
-        'max_size': None,  # No limit
+        'max_size': 500 * 1024 * 1024,  # 500MB
         'validator': validate_zip_content
     },
     'database': {
@@ -155,61 +155,89 @@ FILE_TYPES = {
 }
 
 
+def _get_file_size(file: UploadFile) -> int:
+    """Determine size of an UploadFile without reading its body into memory."""
+    # FastAPI exposes .size on newer versions; fall back to seek/tell on the
+    # underlying SpooledTemporaryFile when it is missing or unreliable.
+    size = getattr(file, "size", None)
+    if isinstance(size, int) and size >= 0:
+        return size
+
+    try:
+        file.file.seek(0, 2)  # seek to end
+        size = file.file.tell()
+    finally:
+        file.file.seek(0)
+    return size
+
+
 def validate_upload(
     file: UploadFile,
     allowed_types: List[str],
     max_size: Optional[int] = None
-) -> Tuple[str, bytes]:
+) -> Tuple[str, None]:
     """
-    Validate uploaded file for security and type compliance.
-    
+    Validate uploaded file for security and type compliance without reading the
+    full body into memory. Only the first 8KB are read for magic-byte checks;
+    the file pointer is reset to 0 so callers can stream the upload onward.
+
     Args:
         file: The uploaded file
         allowed_types: List of allowed file types ('image', 'video', 'document')
-        max_size: Maximum file size in bytes (auto-determined if None)
-        
+        max_size: Maximum file size in bytes (auto-determined from FILE_TYPES if None)
+
     Returns:
-        Tuple of (mime_type, file_content)
-        
+        Tuple of (mime_type, None). The second element is kept for backwards
+        compatibility with callers that used the old ``(mime, content)`` shape.
+
     Raises:
         HTTPException: If validation fails
     """
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
-    
-    # Read file content once
-    content = file.file.read()
-    file.file.seek(0)
-    
+
     # Get file extension and block SVG explicitly
     ext = '.' + file.filename.split('.')[-1].lower()
     if ext == '.svg':
         raise HTTPException(status_code=415, detail="SVG files are not allowed for security reasons")
-    
+
     # Find matching file type configuration
     config = None
     for file_type in allowed_types:
         if file_type in FILE_TYPES and ext in FILE_TYPES[file_type]['extensions']:
             config = FILE_TYPES[file_type]
             break
-    
+
     if not config:
         allowed_exts = [ext for t in allowed_types for ext in FILE_TYPES.get(t, {}).get('extensions', [])]
         raise HTTPException(status_code=415, detail=f"File type not allowed. Allowed: {allowed_exts}")
-    
-    # Check file size (skip if no limit set)
+
+    # Enforce size limit BEFORE reading any payload.
     size_limit = max_size or config.get('max_size')
-    if size_limit and len(content) > size_limit:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large ({len(content)/1024/1024:.1f}MB > {size_limit/1024/1024:.1f}MB)"
-        )
-    
-    # Validate file content
+    if size_limit:
+        file_size = _get_file_size(file)
+        if file_size > size_limit:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large ({file_size/1024/1024:.1f}MB > {size_limit/1024/1024:.1f}MB)",
+            )
+
+    # ZIP-based formats (scorm, office) need full-body inspection to detect
+    # zip bombs, so we fall back to reading all bytes for those.
+    needs_full_read = config['validator'] in (validate_zip_content,)
+    if needs_full_read:
+        file.file.seek(0)
+        content = file.file.read()
+        file.file.seek(0)
+    else:
+        file.file.seek(0)
+        content = file.file.read(8192)
+        file.file.seek(0)
+
     if not config['validator'](content):
         raise HTTPException(status_code=415, detail="File appears to be corrupted or invalid")
-    
-    return file.content_type, content
+
+    return file.content_type, None
 
 
 def get_safe_filename(original_filename: str, prefix: str = "") -> str:

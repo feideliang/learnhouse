@@ -116,17 +116,6 @@
       "Bash(docker save *)",
       "Bash(git commit -m 'feat: fix video playback bandwidth saturation *)",
       "Bash(docker create *)",
-      "Bash(ln -s ../learnhouse/docker/start.sh docker/start.sh)",
-      "Bash(ln -s ../learnhouse/apps/api apps/api)",
-      "Bash(ln -s ../learnhouse/apps/web apps/web)",
-      "Bash(ln -s ../learnhouse/apps/collab apps/collab)",
-      "Bash(cp -r learnhouse/apps/collab apps/collab)",
-      "Bash(cp -r learnhouse/apps/web apps/web)",
-      "Bash(cp -r learnhouse/apps/api apps/api)",
-      "Bash(docker load *)",
-      "Bash([ ! -e \"$REMOTE/$f\" ])",
-      "Bash([ ! -e \"$LOCAL/$f\" ])",
-      "Bash(FRONTEND=http://localhost:8088 bash *)",
       "Bash(git commit -m ' *)"
     ]
   }

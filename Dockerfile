@@ -91,7 +91,7 @@ COPY --from=frontend-runner /app /app/web
 WORKDIR /app/api
 COPY ./apps/api/uv.lock ./apps/api/pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip uv \
-    && uv sync --no-dev
+    && UV_NO_CACHE=1 uv sync --no-dev
 COPY ./apps/api ./
 
 # Remove Enterprise Edition folder for public builds

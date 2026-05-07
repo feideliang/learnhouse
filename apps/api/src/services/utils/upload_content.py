@@ -99,9 +99,10 @@ async def upload_content(
 
     elif content_delivery == "s3api":
         s3_config = learnhouse_config.hosting_config.content_delivery.s3api
+        upload_timeout = int(os.environ.get("LEARNHOUSE_UPLOAD_TIMEOUT", "1800"))
         kwargs = {
             "endpoint_url": s3_config.endpoint_url,
-            "config": botocore.config.Config(connect_timeout=10, read_timeout=60, retries={"max_attempts": 2}),
+            "config": botocore.config.Config(connect_timeout=10, read_timeout=upload_timeout, retries={"max_attempts": 2}),
         }
         if s3_config.access_key:
             kwargs["aws_access_key_id"] = s3_config.access_key

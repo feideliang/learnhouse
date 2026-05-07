@@ -24,7 +24,8 @@ async function proxyToBackend(request: NextRequest): Promise<Response> {
     : undefined
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 290_000)
+  const timeoutMs = parseInt(process.env.UPLOAD_TIMEOUT_MS || '1790000', 10)
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     const backendResponse = await fetch(backendUrl, {

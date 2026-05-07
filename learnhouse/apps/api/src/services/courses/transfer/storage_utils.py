@@ -47,9 +47,10 @@ def get_storage_client():
         if _s3_client is not None:
             return _s3_client
         learnhouse_config = get_learnhouse_config()
+        upload_timeout = int(os.environ.get("LEARNHOUSE_UPLOAD_TIMEOUT", "1800"))
         kwargs = {
             "endpoint_url": learnhouse_config.hosting_config.content_delivery.s3api.endpoint_url,
-            "config": botocore.config.Config(connect_timeout=10, read_timeout=60, retries={"max_attempts": 2}),
+            "config": botocore.config.Config(connect_timeout=10, read_timeout=upload_timeout, retries={"max_attempts": 2}),
         }
         if learnhouse_config.hosting_config.content_delivery.s3api.access_key:
             kwargs["aws_access_key_id"] = learnhouse_config.hosting_config.content_delivery.s3api.access_key

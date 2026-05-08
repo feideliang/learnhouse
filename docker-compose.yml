@@ -25,10 +25,11 @@ services:
       - LEARNHOUSE_AI_EMBEDDING_MODEL=text-embedding-v4
       - LEARNHOUSE_ANALYTICS_API_URL=http://learnhouse-clickhouse:8123
       - LEARNHOUSE_ANALYTICS_USERNAME=default
-      - LEARNHOUSE_ANALYTICS_PASSWORD=
+      - LEARNHOUSE_ANALYTICS_PASSWORD=learnhouse-ch
       - LEARNHOUSE_ANALYTICS_INGEST_TOKEN=
       - LEARNHOUSE_ANALYTICS_READ_TOKEN=
       # MinIO / S3 storage
+      - LEARNHOUSE_UPLOAD_RATE_LIMIT=2097152
       - LEARNHOUSE_CONTENT_DELIVERY_TYPE=s3api
       - LEARNHOUSE_S3_API_BUCKET_NAME=learnhouse-media
       - LEARNHOUSE_S3_API_ENDPOINT_URL=http://minio:9000
@@ -103,10 +104,11 @@ services:
     environment:
       - CLICKHOUSE_DB=learnhouse
       - CLICKHOUSE_USER=default
-      - CLICKHOUSE_PASSWORD=
+      - CLICKHOUSE_PASSWORD=learnhouse-ch
     volumes:
       - /data/service/learnhouse/clickhouse_data:/var/lib/clickhouse
       - /data/service/learnhouse/docker/init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
+      - /data/service/learnhouse/docker/clickhouse-config.xml:/etc/clickhouse-server/config.d/logging-config.xml
     networks:
       - learnhouse-network
     healthcheck:
@@ -114,6 +116,9 @@ services:
       interval: 5s
       timeout: 4s
       retries: 10
+    mem_limit: 4g
+    mem_reservation: 1g
+    cpus: "1.5"
 
   minio:
     image: minio/minio:latest

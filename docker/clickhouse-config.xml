@@ -1,0 +1,27 @@
+<clickhouse>
+    <!-- Reduce system log verbosity -->
+    <logger>
+        <level>warning</level>
+        <console>true</console>
+    </logger>
+
+    <!-- Disable the heaviest system log tables -->
+    <trace_log remove="1"/>
+    <query_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <background_schedule_pool_log remove="1"/>
+
+    <!-- Keep metric_log and part_log with reduced frequency -->
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+    </metric_log>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+    </part_log>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+    </text_log>
+</clickhouse>

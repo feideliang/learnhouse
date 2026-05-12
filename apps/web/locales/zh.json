@@ -4575,7 +4575,14 @@
     "try_again": "重试",
     "unassigned_files": "未分配的文件",
     "upload_failed": "文件上传失败",
-    "uploading_files": "正在上传文件"
+    "uploading_files": "正在上传文件",
+    "upload_files": "本地上传",
+    "minio_urls": "MinIO 路径",
+    "minio_urls_label": "MinIO 视频路径",
+    "minio_paths_label": "MinIO 视频路径",
+    "minio_paths_placeholder": "bucket-name/path/video.mp4\n/orgs/.../video.mp4",
+    "upload_url_placeholder": "粘贴 MinIO 视频路径，每行一个...\nbucket-name/path/video.mp4",
+    "auto_detect": "自动检测"
   },
   "upgrade_modal": {
     "title": "释放您的全部潜力",

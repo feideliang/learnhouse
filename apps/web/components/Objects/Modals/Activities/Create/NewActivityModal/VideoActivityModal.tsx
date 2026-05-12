@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import * as Form from '@radix-ui/react-form'
 import BarLoader from 'react-spinners/BarLoader'
-import { PlayCircle, Upload, YoutubeLogo } from '@phosphor-icons/react'
+import { PlayCircle, Upload, YoutubeLogo, Cloud } from '@phosphor-icons/react'
 import { constructAcceptValue } from '@/lib/constants'
 
 const SUPPORTED_FILES = constructAcceptValue(['mp4', 'webm'])
@@ -24,6 +24,7 @@ interface ExternalVideoObject {
 function VideoModal({
   submitFileActivity,
   submitExternalVideo,
+  submitMinIOVideo,
   chapterId,
   course,
 }: any) {
@@ -31,7 +32,8 @@ function VideoModal({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [name, setName] = React.useState('')
   const [youtubeUrl, setYoutubeUrl] = React.useState('')
-  const [selectedView, setSelectedView] = React.useState<'file' | 'youtube'>(
+  const [minioUrl, setMinioUrl] = React.useState('')
+  const [selectedView, setSelectedView] = React.useState<'file' | 'youtube' | 'minio'>(
     'file'
   )
   const [videoDetails, setVideoDetails] = React.useState<VideoDetails>({
@@ -80,6 +82,18 @@ function VideoModal({
         }
 
         await submitExternalVideo(external_video_object, 'activity', chapterId)
+      }
+
+      if (selectedView === 'minio' && submitMinIOVideo) {
+        await submitMinIOVideo(
+          {
+            name,
+            uri: minioUrl,
+            chapter_id: chapterId,
+            details: videoDetails,
+          },
+          chapterId
+        )
       }
     } catch (err: any) {
       console.error('Video activity creation failed:', err?.message || err)
@@ -133,7 +147,7 @@ function VideoModal({
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-gray-700">Source</label>
-          <div className="grid grid-cols-2 gap-0 rounded-lg overflow-hidden border border-gray-200">
+          <div className="grid grid-cols-3 gap-0 rounded-lg overflow-hidden border border-gray-200">
             <button
               type="button"
               onClick={() => setSelectedView('file')}
@@ -157,6 +171,18 @@ function VideoModal({
             >
               <YoutubeLogo size={16} weight="duotone" />
               YouTube
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedView('minio')}
+              className={`flex items-center justify-center py-2.5 gap-2 text-sm font-medium border-l border-gray-200 transition-colors ${
+                selectedView === 'minio'
+                  ? 'bg-gray-100 text-gray-900'
+                  : 'bg-white text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              <Cloud size={16} weight="duotone" />
+              MinIO
             </button>
           </div>
         </div>
@@ -187,6 +213,22 @@ function VideoModal({
               type="text"
               required
               placeholder="https://youtube.com/watch?v=..."
+              className="w-full h-9 px-3 text-sm rounded-lg bg-gray-50 border border-gray-200 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200 transition-colors"
+            />
+          </div>
+        )}
+
+        {selectedView === 'minio' && (
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700">
+              MinIO Video URL
+            </label>
+            <input
+              value={minioUrl}
+              onChange={(e) => setMinioUrl(e.target.value)}
+              type="url"
+              required
+              placeholder="http://minio:9000/bucket/course_video.mp4"
               className="w-full h-9 px-3 text-sm rounded-lg bg-gray-50 border border-gray-200 outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200 transition-colors"
             />
           </div>

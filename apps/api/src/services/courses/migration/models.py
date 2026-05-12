@@ -62,3 +62,28 @@ class MigrationCreateResult(BaseModel):
     activities_created: int
     success: bool
     error: Optional[str] = None
+
+
+class MinIOVideoNode(BaseModel):
+    """A MinIO video URL activity node."""
+    name: str
+    uri: str
+    details: str = "{}"
+
+
+class MigrationUrlChapter(BaseModel):
+    """A chapter with MinIO video URLs."""
+    name: str
+    videos: list[MinIOVideoNode]
+
+
+class MigrationUrlStructure(BaseModel):
+    """Course structure based on MinIO URLs (no file uploads)."""
+    course_name: str
+    course_description: Optional[str] = None
+    chapters: list[MigrationUrlChapter]
+
+
+class CreateFromURLsRequest(BaseModel):
+    """Request to create a course from MinIO URLs."""
+    structure: MigrationUrlStructure

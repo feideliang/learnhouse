@@ -107,6 +107,38 @@ function VideoActivity({ activity, course, orgUuid }: VideoActivityProps) {
               </div>
             </div>
           )}
+          {activity.activity_sub_type === 'SUBTYPE_VIDEO_MINIO' && (
+            <div className="my-0 sm:my-3 md:my-5 w-full">
+              <div className="relative w-full aspect-video sm:rounded-lg overflow-hidden ring-0 sm:ring-1 sm:ring-gray-200/10 sm:dark:ring-gray-700/20 shadow-none">
+                {(() => {
+                  // Use backend stream endpoint — browsers cannot reach internal MinIO URLs directly
+                  if (resolvedOrgUuid && course?.course_uuid && activity?.activity_uuid && activity.content?.filename) {
+                    const src = getActivityVideoStreamUrl(
+                      resolvedOrgUuid,
+                      course.course_uuid,
+                      activity.activity_uuid,
+                      activity.content.filename
+                    )
+                    return (
+                      <LearnHousePlayer
+                        key={activity.activity_uuid}
+                        src={src}
+                        details={activity.details}
+                      />
+                    )
+                  }
+                  return (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-900 text-white">
+                      <div className="text-center">
+                        <AlertCircle className="w-8 h-8 mx-auto mb-2 text-yellow-400" />
+                        <p className="text-sm">Video unavailable — missing stream information</p>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

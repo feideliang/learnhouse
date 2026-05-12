@@ -115,6 +115,7 @@ function NewActivityModal({
   submitActivity,
   submitFileActivity,
   submitExternalVideo,
+  submitMinIOVideo,
   chapterId,
   course,
   selectedView,
@@ -176,6 +177,7 @@ function NewActivityModal({
             <VideoModal
               submitFileActivity={submitFileActivity}
               submitExternalVideo={submitExternalVideo}
+              submitMinIOVideo={submitMinIOVideo}
               chapterId={chapterId}
               course={course}
             />

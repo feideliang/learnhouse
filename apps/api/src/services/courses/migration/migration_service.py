@@ -712,3 +712,179 @@ async def create_course_from_migration(
             success=False,
             error=str(e),
         )
+
+
+async def create_course_from_urls(
+    org_id: int,
+    current_user,
+    db_session: Session,
+    structure: "MigrationUrlStructure",
+    request: Request | None = None,
+) -> MigrationCreateResult:
+    """Create a course from MinIO video URLs (no file upload needed).
+
+    Each URL becomes a SUBTYPE_VIDEO_MINIO activity. The video is played
+    through the backend stream endpoint to avoid browser CORS/connectivity
+    issues with internal MinIO URLs.
+    """
+    from urllib.parse import urlparse
+
+    # Reject anonymous users
+    if isinstance(current_user, AnonymousUser):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    # RBAC: must be allowed to create a course in this org
+    if request is not None:
+        await check_resource_access(
+            request, db_session, current_user, "course_x", AccessAction.CREATE
+        )
+
+    # For API tokens, attribute authorship to the user who created the token
+    if isinstance(current_user, APITokenUser):
+        author_user_id = current_user.created_by_user_id
+    else:
+        author_user_id = current_user.id
+
+    if not author_user_id:
+        raise HTTPException(status_code=401, detail="Invalid user for authorship")
+
+    # Get org
+    statement = select(Organization).where(Organization.id == org_id)
+    organization = db_session.exec(statement).first()
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    org_uuid = organization.org_uuid
+
+    try:
+        now = str(datetime.now())
+        course_uuid = f"course_{uuid4()}"
+
+        # Create course
+        course = Course(
+            org_id=org_id,
+            name=structure.course_name,
+            description=structure.course_description or "",
+            about="",
+            learnings="",
+            tags="",
+            thumbnail_type=ThumbnailType.IMAGE,
+            thumbnail_image="",
+            thumbnail_video="",
+            public=False,
+            published=False,
+            open_to_contributors=False,
+            course_uuid=course_uuid,
+            creation_date=now,
+            update_date=now,
+        )
+        db_session.add(course)
+        db_session.flush()
+
+        # Create resource author
+        author = ResourceAuthor(
+            resource_uuid=course_uuid,
+            user_id=author_user_id,
+            authorship=ResourceAuthorshipEnum.CREATOR,
+            authorship_status=ResourceAuthorshipStatusEnum.ACTIVE,
+            creation_date=now,
+            update_date=now,
+        )
+        db_session.add(author)
+
+        chapters_created = 0
+        activities_created = 0
+
+        for chapter_order, chapter_node in enumerate(structure.chapters):
+            chapter_uuid = f"chapter_{uuid4()}"
+            chapter = Chapter(
+                name=chapter_node.name,
+                description="",
+                thumbnail_image="",
+                chapter_uuid=chapter_uuid,
+                org_id=org_id,
+                course_id=course.id,
+                creation_date=now,
+                update_date=now,
+            )
+            db_session.add(chapter)
+            db_session.flush()
+
+            course_chapter = CourseChapter(
+                course_id=course.id,
+                chapter_id=chapter.id,
+                org_id=org_id,
+                order=chapter_order,
+                creation_date=now,
+                update_date=now,
+            )
+            db_session.add(course_chapter)
+            chapters_created += 1
+
+            for act_order, video_node in enumerate(chapter_node.videos):
+                activity_uuid = f"activity_{uuid4()}"
+
+                # Extract filename from MinIO URL
+                parsed = urlparse(video_node.uri)
+                path_parts = parsed.path.strip("/").split("/")
+                filename = path_parts[-1] if path_parts else ""
+
+                details = json.loads(video_node.details) if video_node.details else {}
+                if filename:
+                    details["filename"] = filename
+
+                activity = Activity(
+                    name=video_node.name,
+                    activity_type=ActivityTypeEnum.TYPE_VIDEO,
+                    activity_sub_type=ActivitySubTypeEnum.SUBTYPE_VIDEO_MINIO,
+                    content={
+                        "uri": video_node.uri,
+                        "type": "minio",
+                        "activity_uuid": activity_uuid,
+                        **({"filename": filename} if filename else {}),
+                    },
+                    details=details,
+                    published=True,
+                    activity_uuid=activity_uuid,
+                    org_id=org_id,
+                    course_id=course.id,
+                    creation_date=now,
+                    update_date=now,
+                    current_version=1,
+                )
+                db_session.add(activity)
+                db_session.flush()
+
+                chapter_activity = ChapterActivity(
+                    chapter_id=chapter.id,
+                    activity_id=activity.id,
+                    course_id=course.id,
+                    org_id=org_id,
+                    order=act_order,
+                    creation_date=now,
+                    update_date=now,
+                )
+                db_session.add(chapter_activity)
+                activities_created += 1
+
+        db_session.commit()
+
+        return MigrationCreateResult(
+            course_uuid=course_uuid,
+            course_name=structure.course_name,
+            chapters_created=chapters_created,
+            activities_created=activities_created,
+            success=True,
+        )
+
+    except Exception as e:
+        db_session.rollback()
+        logger.error("Migration course creation from URLs failed: %s", e, exc_info=True)
+        return MigrationCreateResult(
+            course_uuid="",
+            course_name=structure.course_name,
+            chapters_created=0,
+            activities_created=0,
+            success=False,
+            error=str(e),
+        )

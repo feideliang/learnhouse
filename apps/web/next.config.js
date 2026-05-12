@@ -6,6 +6,7 @@ const nextConfig = {
     'localhost:3001',
     '117.50.145.93:3001',
     '117.50.145.93',
+    '127.0.0.1',
   ],
   async rewrites() {
     return [

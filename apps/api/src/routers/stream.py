@@ -266,6 +266,15 @@ async def stream_activity_video(
     # SECURITY: Verify user has access to this course/activity
     await _verify_course_activity_access(request, course_uuid, activity_uuid, current_user, db_session)
 
+    # Check if this is a MINIO video activity — proxy to external MinIO URL
+    activity_stmt = select(Activity).where(Activity.activity_uuid == activity_uuid)
+    activity = db_session.exec(activity_stmt).first()
+
+    if activity and activity.activity_sub_type.value == "SUBTYPE_VIDEO_MINIO":
+        return await _stream_minio_video(
+            request, activity, filename, client_ip=_get_client_ip(request)
+        )
+
     # Construct and validate the file path
     file_path = validate_video_path(
         CONTENT_DIR,
@@ -358,6 +367,123 @@ async def stream_activity_video(
             headers=headers,
             media_type=mime_type,
         )
+
+
+def _parse_minio_url(minio_url: str) -> tuple[str, str]:
+    """Parse a MinIO URL like http://minio:9000/bucket/path/to/file.mp4
+    into (bucket, key). The key is URL-decoded."""
+    from urllib.parse import urlparse, unquote
+
+    parsed = urlparse(minio_url)
+    path = parsed.path.lstrip("/")
+    if "/" not in path:
+        raise HTTPException(status_code=404, detail="Invalid MinIO URL: missing bucket/key")
+    bucket, key = path.split("/", 1)
+    return bucket, unquote(key)
+
+
+async def _stream_minio_video(
+    request: Request,
+    activity: Activity,
+    filename: str,
+    client_ip: str,
+) -> StreamingResponse:
+    """Proxy video streaming from MinIO using the authenticated S3 client.
+
+    For SUBTYPE_VIDEO_MINIO activities, the video lives in a MinIO bucket
+    that requires authentication. This function uses the configured boto3
+    S3 client to retrieve the file with Range support.
+    """
+    from src.services.courses.transfer.storage_utils import get_storage_client
+
+    minio_url = activity.content.get("uri", "") if activity.content else ""
+    if not minio_url:
+        raise HTTPException(status_code=404, detail="MinIO video URL not found")
+
+    s3_client = get_storage_client()
+    if s3_client is None:
+        raise HTTPException(status_code=500, detail="S3 storage client not configured")
+
+    bucket, key = _parse_minio_url(minio_url)
+
+    # HEAD via S3 to get file size and content-type
+    try:
+        head_resp = await asyncio.to_thread(
+            lambda: s3_client.head_object(Bucket=bucket, Key=key)
+        )
+    except Exception as exc:
+        logger.warning("S3 head_object failed for %s/%s: %s", bucket, key, exc)
+        raise HTTPException(status_code=404, detail="MinIO video not reachable")
+
+    file_size = int(head_resp.get("ContentLength", 0))
+    if file_size <= 0:
+        raise HTTPException(status_code=404, detail="MinIO video size unknown")
+
+    mime_type = head_resp.get("ContentType") or "video/mp4"
+
+    range_header = request.headers.get("range")
+    has_explicit_range = bool(range_header)
+
+    if has_explicit_range:
+        start, end = parse_range_header(range_header, file_size)
+    elif file_size > MAX_FILE_SIZE_FOR_FULL_STREAM:
+        start = 0
+        end = min(CHUNK_SIZE * 10 - 1, file_size - 1)
+    else:
+        start, end = 0, file_size - 1
+
+    content_length = end - start + 1
+    should_use_206 = has_explicit_range or file_size > MAX_FILE_SIZE_FOR_FULL_STREAM
+
+    if not await _acquire_stream_slot(client_ip):
+        logger.warning("Max concurrent streams reached for IP %s", client_ip)
+        raise HTTPException(status_code=429, detail="Too many concurrent video streams")
+
+    response_headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Type": mime_type,
+        "Cache-Control": "public, max-age=86400",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+    range_arg = f"bytes={start}-{end}"
+
+    def _iter_s3_body():
+        get_resp = s3_client.get_object(Bucket=bucket, Key=key, Range=range_arg)
+        body = get_resp["Body"]
+        try:
+            while True:
+                chunk = body.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try:
+                body.close()
+            except Exception:
+                pass
+
+    if should_use_206:
+        response_headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        response_headers["Content-Length"] = str(content_length)
+        status_code = 206
+    else:
+        response_headers["Content-Length"] = str(file_size)
+        status_code = 200
+
+    async def _gen_minio():
+        try:
+            for chunk in _iter_s3_body():
+                yield chunk
+        finally:
+            await _release_stream_slot(client_ip)
+
+    return StreamingResponse(
+        _gen_minio(),
+        status_code=status_code,
+        headers=response_headers,
+        media_type=mime_type,
+    )
 
 
 @router.get(
@@ -571,6 +697,13 @@ async def head_activity_video(
     # SECURITY: Verify user has access to this course/activity
     await _verify_course_activity_access(request, course_uuid, activity_uuid, current_user, db_session)
 
+    # Check for MINIO video
+    activity_stmt = select(Activity).where(Activity.activity_uuid == activity_uuid)
+    activity = db_session.exec(activity_stmt).first()
+
+    if activity and activity.activity_sub_type.value == "SUBTYPE_VIDEO_MINIO":
+        return await _head_minio_video(request, activity)
+
     file_path = validate_video_path(
         CONTENT_DIR,
         "orgs",
@@ -596,6 +729,48 @@ async def head_activity_video(
         headers={
             "Accept-Ranges": "bytes",
             "Content-Length": str(file_size),
+            "Content-Type": mime_type,
+            "Cache-Control": "public, max-age=86400",
+        },
+    )
+
+
+async def _head_minio_video(
+    request: Request,
+    activity: Activity,
+) -> Response:
+    """Return metadata for a MINIO-hosted video without the body.
+
+    Uses the authenticated S3 client to fetch object metadata from MinIO.
+    """
+    from src.services.courses.transfer.storage_utils import get_storage_client
+
+    minio_url = activity.content.get("uri", "") if activity.content else ""
+    if not minio_url:
+        raise HTTPException(status_code=404, detail="MinIO video URL not found")
+
+    s3_client = get_storage_client()
+    if s3_client is None:
+        raise HTTPException(status_code=500, detail="S3 storage client not configured")
+
+    bucket, key = _parse_minio_url(minio_url)
+
+    try:
+        head_resp = await asyncio.to_thread(
+            lambda: s3_client.head_object(Bucket=bucket, Key=key)
+        )
+    except Exception as exc:
+        logger.warning("S3 head_object failed for %s/%s: %s", bucket, key, exc)
+        raise HTTPException(status_code=404, detail="MinIO video not reachable")
+
+    file_size = str(head_resp.get("ContentLength", 0))
+    mime_type = head_resp.get("ContentType") or "video/mp4"
+
+    return Response(
+        status_code=200,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": file_size,
             "Content-Type": mime_type,
             "Cache-Control": "public, max-age=86400",
         },

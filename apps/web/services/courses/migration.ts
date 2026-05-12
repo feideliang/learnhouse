@@ -55,6 +55,29 @@ export interface MigrationUploadResponse {
   skipped: string[]
 }
 
+export interface MinIOVideoNode {
+  name: string
+  uri: string
+  details?: string
+}
+
+export interface ParsedUrl {
+  id: string
+  uri: string
+  name: string
+}
+
+export interface MigrationUrlChapter {
+  name: string
+  videos: MinIOVideoNode[]
+}
+
+export interface MigrationUrlStructure {
+  course_name: string
+  course_description?: string
+  chapters: MigrationUrlChapter[]
+}
+
 export async function uploadMigrationFiles(
   files: File[],
   access_token: string,
@@ -69,7 +92,7 @@ export async function uploadMigrationFiles(
     const file = files[i]
     const batchByteOffset = files.slice(0, i).reduce((s, f) => s + f.size, 0)
 
-    const tempIdParam = tempId ? `&temp_id=${tempId}` : ''
+    const tempIdParam = tempId ? `?temp_id=${tempId}` : ''
     const url = `${getAPIUrl()}courses/migrate/upload${tempIdParam}`
 
     const result: MigrationUploadResponse = await uploadBatchWithProgress(
@@ -153,6 +176,30 @@ export async function createFromMigration(
         Authorization: `Bearer ${access_token}`,
       },
       body: JSON.stringify({ temp_id, structure }),
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(`Creation failed: ${response.statusText}`)
+  }
+
+  return response.json()
+}
+
+export async function createCourseFromUrls(
+  structure: MigrationUrlStructure,
+  org_id: number,
+  access_token: string
+): Promise<MigrationCreateResult> {
+  const response = await fetch(
+    `${getAPIUrl()}courses/migrate/create_from_urls?org_id=${org_id}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${access_token}`,
+      },
+      body: JSON.stringify({ structure }),
     }
   )
 

@@ -13,11 +13,14 @@ from src.services.courses.migration.models import (
     SuggestStructureRequest,
     CreateFromMigrationRequest,
     MigrationCreateResult,
+    MigrationUrlStructure,
+    CreateFromURLsRequest,
 )
 from src.services.courses.migration.migration_service import (
     upload_migration_files,
     suggest_structure,
     create_course_from_migration,
+    create_course_from_urls,
 )
 
 router = APIRouter()
@@ -95,5 +98,34 @@ async def api_create_from_migration(
         current_user=current_user,
         db_session=db_session,
         temp_id=body.temp_id,
+        structure=body.structure,
+    )
+
+
+@router.post(
+    "/migrate/create_from_urls",
+    response_model=MigrationCreateResult,
+    summary="Create course from MinIO URLs",
+    description="Create a course where each video activity references a MinIO-hosted video URL. No files are uploaded — the videos are played directly from MinIO through the backend stream endpoint.",
+    responses={
+        200: {"description": "Course created with MinIO video activities.", "model": MigrationCreateResult},
+        400: {"description": "Invalid URL structure"},
+        403: {"description": "Caller lacks permission to create courses in this org"},
+        404: {"description": "Organization not found"},
+    },
+)
+async def api_create_from_urls(
+    request: Request,
+    org_id: int,
+    body: CreateFromURLsRequest,
+    current_user: PublicUser | APITokenUser = Depends(get_authenticated_user),
+    db_session: Session = Depends(get_db_session),
+):
+    """Create a course from MinIO video URLs (no file upload)."""
+    return await create_course_from_urls(
+        request=request,
+        org_id=org_id,
+        current_user=current_user,
+        db_session=db_session,
         structure=body.structure,
     )

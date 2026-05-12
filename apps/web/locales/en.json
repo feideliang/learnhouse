@@ -4520,7 +4520,14 @@
     "uploading_files": "Uploading files",
     "step_upload": "Upload",
     "step_organize": "Organize",
-    "step_complete": "Complete"
+    "step_complete": "Complete",
+    "upload_files": "Upload Files",
+    "minio_urls": "MinIO Paths",
+    "minio_urls_label": "MinIO Video Paths",
+    "minio_paths_label": "MinIO Video Paths",
+    "minio_paths_placeholder": "bucket-name/path/video.mp4\n/orgs/.../video.mp4",
+    "upload_url_placeholder": "Paste one or more MinIO paths here...\nbucket-name/path/video.mp4",
+    "auto_detect": "Auto-detected"
   },
   "onboarding": {
     "getting_started": "Getting Started",

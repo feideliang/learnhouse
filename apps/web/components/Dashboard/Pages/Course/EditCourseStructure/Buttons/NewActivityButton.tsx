@@ -6,6 +6,7 @@ import {
   createActivity,
   createExternalVideoActivity,
   createFileActivity,
+  createMinIOVideoActivity,
 } from '@services/courses/activities'
 import { getOrganizationContextInfoWithoutCredentials } from '@services/organizations/orgs'
 import { revalidateTags } from '@services/utils/ts/requests'
@@ -102,6 +103,23 @@ function NewActivityButton(props: NewActivityButtonProps) {
     router.refresh()
   }
 
+  // Submit MinIO Video Link
+  const submitMinIOVideo = async (
+    data: { name: string; uri: string; chapter_id: string; details: any },
+    chapterId: string
+  ) => {
+    const toast_loading = toast.loading(t('dashboard.courses.structure.activity.toasts.creating'))
+    await createMinIOVideoActivity(data, access_token)
+    mutate(`${getAPIUrl()}courses/${course.courseStructure.course_uuid}/meta?with_unpublished_activities=${withUnpublishedActivities}`)
+    // Refresh sidebar cache
+    mutate((key: string) => typeof key === 'string' && key.includes('/courses/org_slug/'))
+    setNewActivityModal(false)
+    toast.dismiss(toast_loading)
+    toast.success(t('dashboard.courses.structure.activity.toasts.create_success'))
+    await revalidateTags(['courses'], props.orgslug)
+    router.refresh()
+  }
+
   useEffect(() => { }, [course])
 
   const dialogTitle = selectedView !== 'home' ? (
@@ -132,6 +150,7 @@ function NewActivityButton(props: NewActivityButtonProps) {
             closeModal={closeNewActivityModal}
             submitFileActivity={submitFileActivity}
             submitExternalVideo={submitExternalVideo}
+            submitMinIOVideo={submitMinIOVideo}
             submitActivity={submitActivity}
             chapterId={props.chapterId}
             course={course}

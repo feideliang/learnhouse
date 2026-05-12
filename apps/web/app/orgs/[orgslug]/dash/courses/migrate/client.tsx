@@ -15,6 +15,7 @@ import { useOrg } from '@components/Contexts/OrgContext'
 import { getUriWithOrg } from '@services/config/config'
 import { Breadcrumbs } from '@components/Objects/Breadcrumbs/Breadcrumbs'
 import MigrationDropZone from '@components/Objects/Modals/Course/Create/MigrationWizard/MigrationDropZone'
+import MigrationUrlInput from '@components/Objects/Modals/Course/Create/MigrationWizard/MigrationUrlInput'
 import MigrationPromptForm from '@components/Objects/Modals/Course/Create/MigrationWizard/MigrationPromptForm'
 import MigrationTreeEditor from '@components/Objects/Modals/Course/Create/MigrationWizard/MigrationTreeEditor'
 import MigrationProgress from '@components/Objects/Modals/Course/Create/MigrationWizard/MigrationProgress'
@@ -22,14 +23,18 @@ import {
   uploadMigrationFiles,
   suggestStructure,
   createFromMigration,
+  createCourseFromUrls,
   MigrationTreeStructure,
   UploadedFileInfo,
   MigrationCreateResult,
+  MigrationUrlStructure,
+  ParsedUrl,
 } from '@services/courses/migration'
 import { formatBytesPerSecond } from '@/lib/upload-progress'
 import toast from 'react-hot-toast'
 
 type WizardStep = 'upload' | 'organize' | 'creating' | 'complete'
+type UploadMode = 'files' | 'urls'
 
 interface MigrationClientProps {
   orgslug: string
@@ -54,6 +59,10 @@ export default function MigrationClient({ orgslug }: MigrationClientProps) {
   const [uploadPercentage, setUploadPercentage] = useState(0)
   const [uploadSpeed, setUploadSpeed] = useState('')
   const [uploadCurrentFile, setUploadCurrentFile] = useState('')
+
+  // URL mode state
+  const [uploadMode, setUploadMode] = useState<UploadMode>('files')
+  const [urls, setUrls] = useState<ParsedUrl[]>([])
 
   // Organization state
   const [step, setStep] = useState<WizardStep>('upload')
@@ -190,8 +199,63 @@ export default function MigrationClient({ orgslug }: MigrationClientProps) {
     setCreateResult(undefined)
   }
 
-  const canProceedToUpload =
+  const handleCreateFromUrls = async () => {
+    if (!urls.length || !courseName.trim() || !access_token || !org_id) return
+
+    setUploading(true)
+    try {
+      const urlStructure: MigrationUrlStructure = {
+        course_name: courseName,
+        course_description: description || undefined,
+        chapters: [
+          {
+            name: t('migration.new_chapter') || 'Content',
+            videos: urls.map(u => ({
+              name: u.name,
+              uri: u.uri,
+            })),
+          },
+        ],
+      }
+
+      setStep('creating')
+      setCreateStatus('creating')
+
+      const result = await createCourseFromUrls(
+        urlStructure,
+        org_id,
+        access_token
+      )
+
+      if (result.success) {
+        setCreateStatus('success')
+        setCreateResult(result)
+        setStep('complete')
+      } else {
+        setCreateStatus('error')
+        setCreateResult(result)
+      }
+    } catch (err: any) {
+      setStep('creating')
+      setCreateStatus('error')
+      setCreateResult({
+        course_uuid: '',
+        course_name: courseName,
+        chapters_created: 0,
+        activities_created: 0,
+        success: false,
+        error: err.message,
+      })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const canProceedToFileUpload =
     files.length > 0 && courseName.trim().length > 0
+
+  const canProceedToUrlCreate =
+    urls.length > 0 && courseName.trim().length > 0
 
   // Step indicator
   const steps = [
@@ -282,14 +346,116 @@ export default function MigrationClient({ orgslug }: MigrationClientProps) {
       {step === 'upload' && (
         <div className="max-w-2xl mx-auto">
           <div className="bg-white rounded-xl nice-shadow p-6 space-y-5">
-            <MigrationDropZone
-              files={files}
-              onFilesChange={setFiles}
-              uploading={uploading}
-            />
+            {/* Mode Tabs */}
+            <div className="grid grid-cols-2 gap-0 rounded-lg overflow-hidden border border-gray-200">
+              <button
+                onClick={() => setUploadMode('files')}
+                className={`py-2.5 text-sm font-medium transition-colors ${
+                  uploadMode === 'files'
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {t('migration.upload_files') || '本地上传'}
+              </button>
+              <button
+                onClick={() => setUploadMode('urls')}
+                className={`py-2.5 text-sm font-medium border-l border-gray-200 transition-colors ${
+                  uploadMode === 'urls'
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {t('migration.minio_urls') || 'MinIO 路径'}
+              </button>
+            </div>
 
-            {files.length > 0 && (
+            {uploadMode === 'files' && (
               <>
+                <MigrationDropZone
+                  files={files}
+                  onFilesChange={setFiles}
+                  uploading={uploading}
+                />
+
+                {files.length > 0 && (
+                  <>
+                    <div className="border-t border-gray-100 pt-5">
+                      <MigrationPromptForm
+                        courseName={courseName}
+                        onCourseNameChange={setCourseName}
+                        description={description}
+                        onDescriptionChange={setDescription}
+                        disabled={uploading}
+                      />
+                    </div>
+
+                    {uploading && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>{uploadPercentage}% — {uploadCurrentFile}</span>
+                          {uploadSpeed && (
+                            <span className="tabular-nums">{uploadSpeed}</span>
+                          )}
+                        </div>
+                        <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-green-500 rounded-full transition-all duration-300 ease-out"
+                            style={{ width: `${uploadPercentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center space-x-3 justify-end pt-2">
+                      {canUseAI && (
+                        <button
+                          onClick={() => handleUploadAndOrganize(true)}
+                          disabled={!canProceedToFileUpload || uploading}
+                          className={`rounded-lg bg-black transition-all duration-100 ease-linear antialiased p-2 px-5 text-xs font-bold text-white nice-shadow flex space-x-2 items-center ${
+                            !canProceedToFileUpload || uploading
+                              ? 'opacity-50 cursor-not-allowed'
+                              : 'hover:scale-105'
+                          }`}
+                        >
+                          {uploading || aiLoading ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Sparkles size={14} />
+                          )}
+                          <span>{t('migration.organize_with_ai')}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleUploadAndOrganize(false)}
+                        disabled={!canProceedToFileUpload || uploading}
+                        className={`rounded-lg border border-gray-200 bg-white transition-all duration-100 ease-linear antialiased p-2 px-5 text-xs font-bold text-gray-700 nice-shadow flex space-x-2 items-center ${
+                          !canProceedToFileUpload || uploading
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'hover:scale-105'
+                        }`}
+                      >
+                        {uploading && !aiLoading ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <LayoutGrid size={14} />
+                        )}
+                        <span>{t('migration.organize_manually')}</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {uploadMode === 'urls' && (
+              <>
+                <MigrationUrlInput
+                  urls={urls}
+                  onUrlsChange={setUrls}
+                  creating={uploading}
+                />
+
                 <div className="border-t border-gray-100 pt-5">
                   <MigrationPromptForm
                     courseName={courseName}
@@ -300,57 +466,33 @@ export default function MigrationClient({ orgslug }: MigrationClientProps) {
                   />
                 </div>
 
-                {uploading && (
+                {uploading && step !== 'creating' && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>{uploadPercentage}% — {uploadCurrentFile}</span>
-                      {uploadSpeed && (
-                        <span className="tabular-nums">{uploadSpeed}</span>
-                      )}
+                      <span>{t('migration.creating_course')}</span>
                     </div>
                     <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-green-500 rounded-full transition-all duration-300 ease-out"
-                        style={{ width: `${uploadPercentage}%` }}
-                      />
+                      <div className="h-full bg-blue-500 rounded-full animate-pulse" style={{ width: '100%' }} />
                     </div>
                   </div>
                 )}
 
-                <div className="flex items-center space-x-3 justify-end pt-2">
-                  {canUseAI && (
-                    <button
-                      onClick={() => handleUploadAndOrganize(true)}
-                      disabled={!canProceedToUpload || uploading}
-                      className={`rounded-lg bg-black transition-all duration-100 ease-linear antialiased p-2 px-5 text-xs font-bold text-white nice-shadow flex space-x-2 items-center ${
-                        !canProceedToUpload || uploading
-                          ? 'opacity-50 cursor-not-allowed'
-                          : 'hover:scale-105'
-                      }`}
-                    >
-                      {uploading || aiLoading ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Sparkles size={14} />
-                      )}
-                      <span>{t('migration.organize_with_ai')}</span>
-                    </button>
-                  )}
+                <div className="flex items-center justify-end pt-2">
                   <button
-                    onClick={() => handleUploadAndOrganize(false)}
-                    disabled={!canProceedToUpload || uploading}
-                    className={`rounded-lg border border-gray-200 bg-white transition-all duration-100 ease-linear antialiased p-2 px-5 text-xs font-bold text-gray-700 nice-shadow flex space-x-2 items-center ${
-                      !canProceedToUpload || uploading
+                    onClick={handleCreateFromUrls}
+                    disabled={!canProceedToUrlCreate || uploading}
+                    className={`rounded-lg bg-black transition-all duration-100 ease-linear antialiased p-2 px-5 text-xs font-bold text-white nice-shadow flex space-x-2 items-center ${
+                      !canProceedToUrlCreate || uploading
                         ? 'opacity-50 cursor-not-allowed'
                         : 'hover:scale-105'
                     }`}
                   >
-                    {uploading && !aiLoading ? (
+                    {uploading ? (
                       <Loader2 size={14} className="animate-spin" />
                     ) : (
-                      <LayoutGrid size={14} />
+                      <Sparkles size={14} />
                     )}
-                    <span>{t('migration.organize_manually')}</span>
+                    <span>{t('migration.create_course') || '创建课程'}</span>
                   </button>
                 </div>
               </>

@@ -83,7 +83,7 @@ export async function createExternalVideoActivity(
   // add coursechapter_id to data
   data.chapter_id = String(chapter_id)
   data.activity_id = activity.id
-  
+
   // Add video details with null checking
   const defaultDetails = {
     startTime: 0,
@@ -104,6 +104,32 @@ export async function createExternalVideoActivity(
   const result = await fetch(
     `${getAPIUrl()}activities/external_video`,
     RequestBodyWithAuthHeader('POST', data, null, access_token)
+  )
+  const res = await result.json()
+  return res
+}
+
+export async function createMinIOVideoActivity(
+  data: { name: string; uri: string; chapter_id: string; details: any },
+  access_token: string
+) {
+  const videoDetails = data.details ? {
+    startTime: data.details.startTime ?? 0,
+    endTime: data.details.endTime ?? null,
+    autoplay: data.details.autoplay ?? false,
+    muted: data.details.muted ?? false,
+  } : { startTime: 0, endTime: null, autoplay: false, muted: false }
+
+  const body = {
+    name: data.name,
+    uri: data.uri,
+    chapter_id: String(data.chapter_id),
+    details: JSON.stringify(videoDetails),
+  }
+
+  const result = await fetch(
+    `${getAPIUrl()}activities/minio_video`,
+    RequestBodyWithAuthHeader('POST', body, null, access_token)
   )
   const res = await result.json()
   return res

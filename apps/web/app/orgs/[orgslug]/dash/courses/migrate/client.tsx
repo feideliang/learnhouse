@@ -466,7 +466,7 @@ export default function MigrationClient({ orgslug }: MigrationClientProps) {
                   />
                 </div>
 
-                {uploading && step !== 'creating' && (
+                {uploading && (step as string) !== 'creating' && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-gray-500">
                       <span>{t('migration.creating_course')}</span>
